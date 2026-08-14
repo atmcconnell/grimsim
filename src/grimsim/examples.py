@@ -1,9 +1,11 @@
-"""Fictional example unit profiles for demos and tests.
+"""Fictional example unit profiles and army-list demos.
 
 These are generic numeric profiles — not copied datasheet text.
 """
 
 from __future__ import annotations
+
+from datetime import date
 
 from grimsim.models.ability import (
     FeelNoPain,
@@ -12,9 +14,17 @@ from grimsim.models.ability import (
     RerollWoundOnes,
     SustainedHits,
 )
+from grimsim.models.army import Army
+from grimsim.models.army_list import ArmyList
+from grimsim.models.detachment import Detachment
 from grimsim.models.dice import DiceExpression
+from grimsim.models.enhancement import Enhancement
+from grimsim.models.faction import Faction
+from grimsim.models.ruleset import Ruleset
+from grimsim.models.selection import UnitSelection
 from grimsim.models.unit import Unit, UnitProfile
 from grimsim.models.weapon import Weapon, WeaponProfile
+from grimsim.validation import validate_army_list
 
 
 def melee_attacker() -> Unit:
@@ -121,6 +131,74 @@ def vehicle() -> Unit:
         ),
         weapons=(cannon,),
     )
+
+
+def example_ruleset() -> Ruleset:
+    """Sample rules/points environment."""
+    return Ruleset(
+        id="10th-balanced-2025.01",
+        edition="10th",
+        rules_version="0.2.0",
+        points_version="2025.01",
+        effective_date=date(2025, 1, 1),
+    )
+
+
+def example_faction() -> Faction:
+    """Fictional faction identity."""
+    return Faction(id="crimson_hosts", name="Crimson Hosts")
+
+
+def example_detachment() -> Detachment:
+    """Fictional detachment for the example faction."""
+    return Detachment(
+        id="blood_tide",
+        name="Blood Tide",
+        faction_id="crimson_hosts",
+        abilities=(RerollHitOnes(),),
+    )
+
+
+def example_army_list(*, points_limit: int = 2000) -> ArmyList:
+    """Build a fictional 2,000-point roster for demos and tests."""
+    warlord_enhancement = Enhancement(
+        id="exemplar_blade",
+        name="Exemplar Blade",
+        points=25,
+    )
+    # Points total: 360 + 240 + 225 + 440 + 180 + 240 + 200 + 110 = 1995
+    return ArmyList(
+        name="Example Crimson Hosts",
+        faction=example_faction(),
+        detachment=example_detachment(),
+        ruleset=example_ruleset(),
+        points_limit=points_limit,
+        selections=(
+            UnitSelection(unit=melee_attacker(), quantity=2, points=180),  # 360
+            UnitSelection(unit=light_infantry(), quantity=2, points=120),  # 240
+            UnitSelection(
+                unit=elite_infantry(),
+                quantity=1,
+                points=200,
+                enhancements=(warlord_enhancement,),
+            ),  # 225
+            UnitSelection(unit=vehicle(), quantity=2, points=220),  # 440
+            UnitSelection(unit=melee_attacker(), quantity=1, points=180),  # 180
+            UnitSelection(unit=light_infantry(), quantity=2, points=120),  # 240
+            UnitSelection(unit=elite_infantry(), quantity=1, points=200),  # 200
+            UnitSelection(unit=vehicle(), quantity=1, points=110),  # 110
+        ),
+    )
+
+
+def example_validated_army() -> tuple[ArmyList, Army]:
+    """Create a validated list and a runtime Army from it."""
+    army_list = example_army_list()
+    validation = validate_army_list(army_list)
+    if not validation.is_valid:
+        codes = ", ".join(issue.code for issue in validation.errors)
+        raise ValueError(f"example army list is invalid: {codes}")
+    return army_list, Army.from_list(army_list)
 
 
 EXAMPLE_UNITS: dict[str, Unit] = {

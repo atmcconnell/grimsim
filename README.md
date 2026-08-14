@@ -2,15 +2,22 @@
 
 Python simulation engine for competitive Warhammer 40,000 analysis.
 
-GrimSim models the core attack pipeline:
+**v0.2** extends the v0.1 unit-vs-unit combat simulator with first-class army
+roster concepts: rulesets, factions, detachments, army lists, and runtime armies.
+
+Core pipeline:
 
 ```text
 attacks → hits → wounds → saves → damage → models killed
 ```
 
-**Units describe data. Rules interpret that data. Simulators execute those rules repeatedly.**
+Guiding principles:
 
-This is a v0.1 foundation — not a full 40k ruleset. There is no graphical UI; you use the Python API.
+> Units describe data. Rules interpret that data. Simulators execute those rules repeatedly.
+
+> Army lists describe roster intent. Armies represent runtime state. Rulesets define the environment in which both are valid.
+
+There is no graphical UI — you use the Python API.
 
 ## Installation
 
@@ -20,209 +27,176 @@ Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/).
 uv sync
 ```
 
-## What is implemented (v0.1)
-
-| Area | Status |
-| --- | --- |
-| Dice engine (`roll_die`, `roll_dice`, `DiceExpression`) | Done — injectable, seedable NumPy RNG |
-| Domain models (`Unit`, `Weapon`, profiles) | Done — frozen dataclasses, composition |
-| Hit / wound / save / damage stages | Done — independently testable |
-| Strength vs Toughness wound table | Done — `wound_target(S, T)` |
-| Damage allocation (no spill between models) | Done |
-| Abilities: reroll 1s, Sustained Hits, Lethal Hits, FNP | Done |
-| Single combat API | Done — `simulate_combat` |
-| Monte Carlo API | Done — `simulate_many` + pandas export |
-| Example profiles | Done — melee, light/elite infantry, vehicle |
-| DuckDB schema foundation | Done — optional, not required for combat |
-| scikit-learn matchup model | Placeholder only (not trained) |
-
-## Architecture
+## Architecture (v0.2)
 
 ```text
-Unit Data  ↔  Rule Engine  ↔  Simulator
+Ruleset
+   ↓
+Faction + Detachment
+   ↓
+ArmyList
+   ↓
+Army / UnitState
+   ↓
+Rule Engine
+   ↓
+Simulator
+   ↓
+Analysis
 ```
+
+### Layer distinctions
+
+| Concept | Role |
+| --- | --- |
+| `Unit` | Immutable game profile / combat data |
+| `UnitSelection` | That unit chosen for a roster (points, quantity, enhancements) |
+| `ArmyList` | Static roster definition under a faction/detachment/ruleset |
+| `UnitState` | Mutable in-game state (models remaining, wounds, destroyed) |
+| `Army` | Runtime representation instantiated from an `ArmyList` |
+| `Ruleset` | Edition / rules / points environment |
+| `Detachment` | Faction-specific strategic rules package |
+| `Faction` | Identity data only — no combat behavior |
+
+Low-level combat (`simulate_combat` / `simulate_many`) still works **without**
+building an army list.
 
 | Layer | Package | Responsibility |
 | --- | --- | --- |
-| Domain data | `grimsim.models` | Immutable units, weapons, dice, combat results |
-| Abilities | `grimsim.models.ability` | Small reusable effect objects |
+| Domain data | `grimsim.models` | Units, weapons, dice, roster, runtime state |
+| Validation | `grimsim.validation` | Extensible army-list legality checks |
 | Rules | `grimsim.rules` | Stage-based combat resolution |
-| Simulation | `grimsim.simulation` | Single combat + Monte Carlo |
+| Simulation | `grimsim.simulation` | Single combat + Monte Carlo (+ activation stub) |
 | Analysis | `grimsim.analysis` | Matchup summary helpers |
-| Persistence | `grimsim.data` | Optional DuckDB schemas |
+| Persistence | `grimsim.data` | Optional DuckDB adapters (not required for combat) |
 | ML | `grimsim.ml` | Future matchup prediction placeholder |
-| Examples | `grimsim.examples` | Fictional numeric demo profiles |
 
-Composition over inheritance: units are data containers with attached ability objects. The rule engine discovers abilities through composition — never via unit-name or faction conditionals.
+## What is implemented
 
-## User interface (Python API)
+### v0.1 (still supported)
 
-GrimSim is a library. The primary entry points are imported from `grimsim`:
+- Dice engine with injectable NumPy RNG
+- Immutable `Unit` / `Weapon` profiles
+- Hit / wound / save / damage stages
+- Abilities: reroll 1s, Sustained Hits, Lethal Hits, Feel No Pain
+- `simulate_combat` / `simulate_many`
+
+### v0.2 (new)
+
+- `Ruleset`, `Faction`, `Detachment`, `Enhancement`
+- `UnitSelection`, `ArmyList` with derived points helpers
+- `ArmyListValidator` / `validate_army_list` → `ValidationResult`
+- `Army` + `UnitState` runtime models (`Army.from_list`)
+- DuckDB tables for rulesets, factions, detachments, army lists
+- `simulate_unit_activation` stub (implemented in v0.3)
+
+## Army list example
 
 ```python
+from datetime import date
+
 from grimsim import (
-    simulate_combat,      # one attack sequence
-    simulate_many,        # Monte Carlo wrapper
-    CombatContext,        # optional modifiers
-    CombatResult,         # typed single-run result
-    MonteCarloResult,     # aggregated stats + helpers
-    Unit,
-    UnitProfile,
-    Weapon,
-    WeaponProfile,
+    Army,
+    ArmyList,
+    Detachment,
+    Enhancement,
+    Faction,
+    Ruleset,
+    UnitSelection,
+    validate_army_list,
 )
+from grimsim.examples import melee_attacker, light_infantry, elite_infantry, vehicle
+
+ruleset = Ruleset(
+    id="10th-balanced-2025.01",
+    edition="10th",
+    rules_version="0.2.0",
+    points_version="2025.01",
+    effective_date=date(2025, 1, 1),
+)
+faction = Faction(id="crimson_hosts", name="Crimson Hosts")
+detachment = Detachment(
+    id="blood_tide",
+    name="Blood Tide",
+    faction_id=faction.id,
+)
+
+army_list = ArmyList(
+    name="Example Army",
+    faction=faction,
+    detachment=detachment,
+    ruleset=ruleset,
+    points_limit=2000,
+    selections=(
+        UnitSelection(unit=melee_attacker(), quantity=2, points=180),
+        UnitSelection(unit=light_infantry(), quantity=2, points=120),
+        UnitSelection(
+            unit=elite_infantry(),
+            quantity=1,
+            points=200,
+            enhancements=(Enhancement(id="blade", name="Exemplar Blade", points=25),),
+        ),
+        UnitSelection(unit=vehicle(), quantity=2, points=220),
+    ),
+)
+
+validation = validate_army_list(army_list)
+print(army_list.total_points, army_list.remaining_points, validation.is_valid)
+
+army = Army.from_list(army_list)  # runtime state, separate from the list
 ```
 
-### 1. Build units (data only)
+Or use the bundled demo:
 
 ```python
-from grimsim import Unit, UnitProfile, Weapon, WeaponProfile
-from grimsim.models.ability import SustainedHits, LethalHits, RerollHitOnes
-from grimsim.models.dice import DiceExpression
+from grimsim.examples import example_army_list, example_validated_army
+from grimsim import validate_army_list
 
-weapon = Weapon(
-    profile=WeaponProfile(
-        name="Chain Axe",
-        attacks=4,              # or DiceExpression.d6()
-        skill=3,                # 3+
-        strength=5,
-        ap=-2,                  # datasheet convention (0, -1, -2, …)
-        damage=2,               # or DiceExpression(count=1, sides=3)
-    ),
-    abilities=(SustainedHits(1), LethalHits()),
-)
-
-attacker = Unit(
-    profile=UnitProfile(
-        name="Example Berserkers",
-        model_count=10,
-        toughness=4,
-        wounds_per_model=2,
-        save=3,
-        invulnerable_save=None,
-        objective_control=1,
-    ),
-    weapons=(weapon,),
-    abilities=(RerollHitOnes(),),
-)
+army_list = example_army_list()
+print(army_list.total_points, validate_army_list(army_list).is_valid)
+army_list, army = example_validated_army()
 ```
 
-Units and weapons hold data. They do **not** expose `roll_hits()` / `resolve_saves()` methods — the rule engine owns sequencing.
+### Validation behavior
 
-### 2. Single combat — `simulate_combat`
+`validate_army_list` returns a `ValidationResult` with structured issues:
+
+| Code | Meaning |
+| --- | --- |
+| `DETACHMENT_FACTION_MISMATCH` | Detachment does not belong to the list faction |
+| `OVER_POINTS` | `total_points` exceeds `points_limit` |
+| `EMPTY_ARMY_LIST` | No selections |
+
+Construction also rejects invalid quantity/points and duplicate enhancement IDs on a selection. The validator is intentionally small and easy to extend later.
+
+## Combat APIs (unchanged)
 
 ```python
-from grimsim import simulate_combat, CombatContext
+from grimsim import simulate_combat, simulate_many
 from grimsim.examples import melee_attacker, light_infantry
 
 attacker = melee_attacker()
 target = light_infantry()
 
-result = simulate_combat(
-    attacker=attacker,
-    weapon=attacker.weapons[0],
-    target=target,
-    seed=42,  # or pass rng=np.random.default_rng(42)
-    context=CombatContext(hit_modifier=0, wound_modifier=0, save_modifier=0),
-)
+result = simulate_combat(attacker, attacker.weapons[0], target, seed=42)
+mc = simulate_many(attacker, attacker.weapons[0], target, iterations=100_000, seed=42)
 ```
 
-**`CombatResult` fields**
+## Persistence
 
-| Field | Meaning |
-| --- | --- |
-| `attacks` | Attack dice resolved |
-| `hits` | Total hits (includes Sustained Hits extras) |
-| `critical_hits` | Unmodified 6s on the hit roll |
-| `wounds` | Successful wounds + Lethal Hits auto-wounds |
-| `critical_wounds` | Unmodified 6s on the wound roll |
-| `auto_wounds` | Wounds from Lethal Hits (skipped the wound roll) |
-| `failed_saves` | Wounds that got past armour / invuln |
-| `total_damage` | Wounds actually removed after allocation (excess discarded) |
-| `damage_mitigated` | Damage points ignored by Feel No Pain |
-| `models_killed` | Models removed |
-| `remaining_models` | Models left |
-| `remaining_wounds_on_damaged_model` | Wounds left on the current model, or `None` if undamaged / dead |
-
-### 3. Monte Carlo — `simulate_many`
+Optional DuckDB helpers (combat never requires a database):
 
 ```python
-from grimsim import simulate_many
-from grimsim.examples import melee_attacker, light_infantry
+from grimsim.data import connect, initialize_schema, save_army_list, load_army_list
 
-attacker = melee_attacker()
-target = light_infantry()
-
-mc = simulate_many(
-    attacker=attacker,
-    weapon=attacker.weapons[0],
-    target=target,
-    iterations=100_000,
-    seed=42,
-)
-
-print(mc.mean_damage, mc.median_damage, mc.std_damage)
-print(mc.mean_models_killed, mc.min_models_killed, mc.max_models_killed)
-print(mc.probability_target_destroyed)
-print(mc.probability_models_killed_at_least(5))
-print(mc.probability_damage_at_least(10))
-df = mc.to_dataframe()  # pandas: one row per iteration
+conn = connect()  # or connect("grimsim.duckdb")
+initialize_schema(conn)
+save_army_list(conn, army_list, list_id="my-list")
+loaded = load_army_list(conn, "my-list")
 ```
 
-### 4. Optional helpers
-
-| Function / type | Module | Purpose |
-| --- | --- | --- |
-| `RuleEngine.resolve_attack_sequence(...)` | `grimsim.rules` | Direct engine access |
-| `wound_target(strength, toughness)` | `grimsim.rules` | Pure S/T table lookup |
-| `CombatSimulator` | `grimsim.simulation` | Thin OO wrapper around `simulate_combat` |
-| `summarize_matchup(...)` | `grimsim.analysis` | Convenience Monte Carlo helper |
-| `connect` / `initialize_schema` | `grimsim.data` | Local DuckDB setup |
-| `MatchupModelPlaceholder` | `grimsim.ml` | Documents future `P(win \| …)` API |
-
-## How combat resolution works
-
-```text
-resolve attacks  →  hits  →  wounds  →  saves  →  damage + FNP  →  allocate
-```
-
-1. **Attacks** — fixed int or `DiceExpression` (e.g. `D6`, `2D6+2`).
-2. **Hits** — roll vs weapon skill; unmodified 1s always fail, unmodified 6s always hit / crit. Hit abilities apply here.
-3. **Wounds** — standard S vs T table; wound-stage abilities apply. Lethal Hits convert critical hits into auto-wounds (skip this roll only).
-4. **Saves** — armour modified by AP; invulnerable ignores AP. The better legal save is used. Impossible armour (>6+) is discarded.
-5. **Damage** — fixed or dice per failed save; Feel No Pain can ignore individual damage points.
-6. **Allocate** — model-by-model; excess damage on a killing blow does **not** spill to the next model.
-
-### Combat context modifiers
-
-```python
-CombatContext(
-    hit_modifier=1,    # positive = easier hits (3+ becomes 2+)
-    wound_modifier=1,  # positive = easier wounds
-    save_modifier=1,   # armour-only (cover-style); does not affect invulns
-)
-```
-
-## Supported abilities
-
-| Ability | Effect |
-| --- | --- |
-| `RerollHitOnes()` | Reroll hit rolls of 1 (once) |
-| `RerollWoundOnes()` | Reroll wound rolls of 1 (once) |
-| `SustainedHits(X)` | Each critical hit adds `X` additional hits |
-| `LethalHits()` | Critical hits auto-wound (still allow saves) |
-| `FeelNoPain(X)` | Ignore each damage point on `X+` |
-
-Attach abilities to `Weapon.abilities` and/or `Unit.abilities`. Offensive stages read attacker + weapon abilities; Feel No Pain is read from the target unit.
-
-## Example profiles
-
-`grimsim.examples` provides fictional numeric profiles (not datasheet text):
-
-- `melee_attacker()` — Sustained Hits, Lethal Hits, reroll hit 1s
-- `light_infantry()` — soft 1W target
-- `elite_infantry()` — multi-wound, invuln, Feel No Pain
-- `vehicle()` — high T, dice attacks/damage
+Tables: `rulesets`, `rules_versions` (legacy), `factions`, `detachments`,
+`army_lists`, `army_list_selections`, `simulation_runs`.
 
 ## Development commands
 
@@ -236,20 +210,32 @@ uv run mypy src
 
 ## Current limitations
 
-- No terrain, stratagems, detachments, or battle-round sequencing
-- No Blast, Torrent, Hazardous, Devastating Wounds, or mortal wounds
-- No multi-weapon / full-unit activation in one call
-- Each simulation starts from a fresh undamaged target
-- DuckDB is schema-only; combat works without a database
-- Matchup ML model is a documented placeholder (not trained)
+- No full official army construction rules (max copies, transports, leaders, …)
+- Enhancements are points/identity only — no combat effects yet
+- Detachment `effects` are typed placeholders, not interpreted in combat
+- `simulate_unit_activation` is a v0.3 stub
+- Persisted units reload without full weapon/ability graphs
+- No terrain, stratagems, battle rounds, or multi-unit games
 
 ## Roadmap
 
-1. Devastating Wounds, Blast, Torrent, and mortal-wound pipelines
-2. Multi-weapon / full unit activation and overwatch
-3. Persist Monte Carlo runs to DuckDB and build analysis notebooks
-4. Train matchup models: `P(win | army, opponent, list, mission, terrain, skill, rules version)`
-5. Points / rules versioning and datasheet import adapters (non-copyrighted numeric feeds)
+### v0.3
+- Full-unit activation (`simulate_unit_activation`)
+- Multiple weapon profiles per activation
+- Points/version-aware unit data
+- Richer army-list validation
+- Simulation persistence
+
+### v0.4
+- Trade evaluation
+- Matchup representation
+- Tournament game data
+- Matchup analytics
+
+### v0.5
+- Baseline statistical / ML matchup models
+
+Genetic algorithms and list optimization are intentionally deferred.
 
 ## License
 
