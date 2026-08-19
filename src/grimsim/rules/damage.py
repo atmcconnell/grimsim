@@ -174,12 +174,19 @@ def resolve_damage(
     wounds_per_model: int,
     target_abilities: tuple[object, ...],
     rng: np.random.Generator,
+    *,
+    starting_wounds_on_current: int | None = None,
 ) -> AllocationResult:
     """Roll damage, apply Feel No Pain, and allocate to models."""
     instances = roll_damage_instances(failed_saves, damage, rng)
     fnp = collect_feel_no_pain(target_abilities)
     mitigated_instances, ignored = apply_feel_no_pain(instances, fnp, rng)
-    allocation = allocate_damage(mitigated_instances, model_count, wounds_per_model)
+    allocation = allocate_damage(
+        mitigated_instances,
+        model_count,
+        wounds_per_model,
+        starting_wounds_on_current=starting_wounds_on_current,
+    )
     return AllocationResult(
         models_killed=allocation.models_killed,
         remaining_models=allocation.remaining_models,

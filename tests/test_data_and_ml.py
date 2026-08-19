@@ -12,7 +12,7 @@ from grimsim.data.database import (
     insert_rules_version,
     save_ruleset,
 )
-from grimsim.data.repository import load_army_list, save_army_list
+from grimsim.data.repository import load_army_list, save_army_list, save_simulation_summary
 from grimsim.examples import example_army_list
 from grimsim.ml.matchup_model import MatchupFeatures, MatchupModelPlaceholder
 from grimsim.models.ruleset import Ruleset
@@ -77,6 +77,38 @@ def test_save_and_load_army_list() -> None:
     assert loaded.selections[0].unit.profile.name == (
         original.selections[0].unit.profile.name
     )
+    conn.close()
+
+
+def test_save_simulation_summary_is_deterministic() -> None:
+    conn = connect()
+    initialize_schema(conn)
+    kwargs = dict(
+        simulation_type="unit_activation",
+        attacker_name="A",
+        target_name="B",
+        attack_plan="disjoint: 4x Chainblade; 1x Power Maul",
+        iterations=1000,
+        seed=42,
+        mean_damage=3.5,
+        median_damage=3.0,
+        std_damage=1.2,
+        mean_models_killed=3.1,
+        median_models_killed=3.0,
+        min_models_killed=0,
+        max_models_killed=8,
+        probability_target_destroyed=0.01,
+        ruleset_id="10th-balanced-2025.01",
+    )
+    id_a = save_simulation_summary(conn, **kwargs)
+    id_b = save_simulation_summary(conn, **kwargs)
+    assert id_a == id_b
+    assert len(id_a) == 64
+    row = conn.execute(
+        "SELECT simulation_type, iterations, mean_damage FROM simulation_summaries WHERE id = ?",
+        [id_a],
+    ).fetchone()
+    assert row == ("unit_activation", 1000, 3.5)
     conn.close()
 
 

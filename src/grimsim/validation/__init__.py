@@ -2,13 +2,14 @@
 
 from grimsim.validation.army_list import (
     ArmyListValidator,
-    ValidationIssue,
-    ValidationResult,
+    RosterConstraints,
     validate_army_list,
 )
+from grimsim.validation.result import ValidationIssue, ValidationResult
 
 __all__ = [
     "ArmyListValidator",
+    "RosterConstraints",
     "ValidationIssue",
     "ValidationResult",
     "validate_army_list",

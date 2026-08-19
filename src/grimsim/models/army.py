@@ -32,11 +32,25 @@ class UnitState:
             raise ValueError("remaining_models cannot exceed starting_models")
         if self.destroyed and self.remaining_models != 0:
             raise ValueError("destroyed units must have remaining_models == 0")
+        if self.remaining_models == 0:
+            self.wounds_on_current_model = None
+            self.destroyed = True
+        elif self.wounds_on_current_model is not None:
+            max_wounds = self.unit.profile.wounds_per_model
+            if not 1 <= self.wounds_on_current_model <= max_wounds:
+                raise ValueError(
+                    f"wounds_on_current_model must be 1..{max_wounds} or None, "
+                    f"got {self.wounds_on_current_model}"
+                )
+            if self.wounds_on_current_model == max_wounds:
+                self.wounds_on_current_model = None
 
     def apply_models_lost(self, models_killed: int) -> None:
         """Reduce remaining models after an attack sequence.
 
-        Excess kills beyond remaining models are ignored.
+        Excess kills beyond remaining models are ignored. Killing models
+        always removes the currently wounded model first, so partial wounds
+        are cleared whenever at least one model dies.
         """
         if models_killed < 0:
             raise ValueError(f"models_killed must be >= 0, got {models_killed}")
@@ -46,6 +60,45 @@ class UnitState:
         if self.remaining_models == 0:
             self.destroyed = True
             self.wounds_on_current_model = None
+        elif models_killed > 0:
+            self.wounds_on_current_model = None
+
+    @classmethod
+    def from_unit(
+        cls,
+        unit: Unit,
+        *,
+        remaining_models: int | None = None,
+        wounds_on_current_model: int | None = None,
+    ) -> UnitState:
+        """Wrap an immutable ``Unit`` as fresh (or partially depleted) runtime state."""
+        starting = unit.profile.model_count
+        remaining = starting if remaining_models is None else remaining_models
+        return cls(
+            unit=unit,
+            starting_models=starting,
+            remaining_models=remaining,
+            wounds_on_current_model=wounds_on_current_model,
+            destroyed=remaining == 0,
+        )
+
+    def apply_combat_result(self, remaining_models: int, remaining_wounds: int | None) -> None:
+        """Update this state to match an allocation result."""
+        if remaining_models < 0:
+            raise ValueError(f"remaining_models must be >= 0, got {remaining_models}")
+        self.remaining_models = min(remaining_models, self.starting_models)
+        self.wounds_on_current_model = remaining_wounds if self.remaining_models > 0 else None
+        self.destroyed = self.remaining_models == 0
+
+    def copy(self) -> UnitState:
+        """Return an independent copy sharing the immutable ``unit`` profile."""
+        return UnitState(
+            unit=self.unit,
+            starting_models=self.starting_models,
+            remaining_models=self.remaining_models,
+            wounds_on_current_model=self.wounds_on_current_model,
+            destroyed=self.destroyed,
+        )
 
 
 @dataclass
@@ -64,7 +117,7 @@ class Army:
         states: list[UnitState] = []
         for selection in army_list.selections:
             for _ in range(selection.quantity):
-                model_count = selection.unit.profile.model_count
+                model_count = selection.size
                 states.append(
                     UnitState(
                         unit=selection.unit,

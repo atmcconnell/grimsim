@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from datetime import date
 
+from grimsim.data.points import PointsCatalog, PointsEntry
 from grimsim.models.ability import (
     FeelNoPain,
     LethalHits,
@@ -51,6 +52,7 @@ def melee_attacker() -> Unit:
         ),
         weapons=(axe,),
         abilities=(RerollHitOnes(),),
+        id="example-berserkers",
     )
 
 
@@ -76,6 +78,7 @@ def light_infantry() -> Unit:
             objective_control=2,
         ),
         weapons=(las,),
+        id="example-troopers",
     )
 
 
@@ -104,6 +107,7 @@ def elite_infantry() -> Unit:
         ),
         weapons=(bolter,),
         abilities=(FeelNoPain(5),),
+        id="example-veterans",
     )
 
 
@@ -130,6 +134,43 @@ def vehicle() -> Unit:
             objective_control=3,
         ),
         weapons=(cannon,),
+        id="example-battle-tank",
+    )
+
+
+def mixed_melee_unit() -> Unit:
+    """Five-model unit with a mixed melee loadout for activation demos."""
+    chain = Weapon(
+        profile=WeaponProfile(
+            name="Chainblade",
+            attacks=3,
+            skill=3,
+            strength=4,
+            ap=-1,
+            damage=1,
+        ),
+    )
+    maul = Weapon(
+        profile=WeaponProfile(
+            name="Power Maul",
+            attacks=2,
+            skill=3,
+            strength=6,
+            ap=-2,
+            damage=2,
+        ),
+    )
+    return Unit(
+        profile=UnitProfile(
+            name="Example Assault Squad",
+            model_count=5,
+            toughness=4,
+            wounds_per_model=2,
+            save=3,
+            objective_control=1,
+        ),
+        weapons=(chain, maul),
+        id="example-assault-squad",
     )
 
 
@@ -138,10 +179,42 @@ def example_ruleset() -> Ruleset:
     return Ruleset(
         id="10th-balanced-2025.01",
         edition="10th",
-        rules_version="0.2.0",
+        rules_version="0.3.0",
         points_version="2025.01",
         effective_date=date(2025, 1, 1),
     )
+
+
+def example_ruleset_alt() -> Ruleset:
+    """A later points version of the same edition."""
+    return Ruleset(
+        id="10th-balanced-2025.06",
+        edition="10th",
+        rules_version="0.3.0",
+        points_version="2025.06",
+        effective_date=date(2025, 6, 1),
+    )
+
+
+def example_points_catalog() -> PointsCatalog:
+    """Local catalog with different costs under two rulesets."""
+    jan = example_ruleset()
+    jun = example_ruleset_alt()
+    return PointsCatalog(
+        entries=(
+            PointsEntry("example-berserkers", jan.slug, 10, 180),
+            PointsEntry("example-troopers", jan.slug, 10, 120),
+            PointsEntry("example-veterans", jan.slug, 5, 200),
+            PointsEntry("example-battle-tank", jan.slug, 1, 220),
+            PointsEntry("example-assault-squad", jan.slug, 5, 95),
+            PointsEntry("example-berserkers", jun.slug, 10, 200),
+            PointsEntry("example-troopers", jun.slug, 10, 110),
+            PointsEntry("example-veterans", jun.slug, 5, 210),
+            PointsEntry("example-battle-tank", jun.slug, 1, 235),
+            PointsEntry("example-assault-squad", jun.slug, 5, 100),
+        )
+    )
+
 
 
 def example_faction() -> Faction:
@@ -206,4 +279,6 @@ EXAMPLE_UNITS: dict[str, Unit] = {
     "light_infantry": light_infantry(),
     "elite_infantry": elite_infantry(),
     "vehicle": vehicle(),
+    "mixed_melee_unit": mixed_melee_unit(),
 }
+

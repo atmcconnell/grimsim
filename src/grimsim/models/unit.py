@@ -51,8 +51,24 @@ class UnitProfile:
 
 @dataclass(frozen=True)
 class Unit:
-    """A unit composed of a profile, weapons, and optional abilities."""
+    """A unit composed of a profile, weapons, and optional abilities.
+
+    ``id`` is a stable identity used for points/profile catalogs. The same
+    identity may map to different profiles under different rulesets.
+    """
 
     profile: UnitProfile
     weapons: tuple[Weapon, ...]
     abilities: tuple[Ability, ...] = ()
+    id: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.id is not None and not self.id.strip():
+            raise ValueError("unit id must be non-empty when provided")
+
+    @property
+    def identity(self) -> str:
+        """Catalog key: explicit ``id`` or the profile name."""
+        if self.id is not None and self.id.strip():
+            return self.id
+        return self.profile.name

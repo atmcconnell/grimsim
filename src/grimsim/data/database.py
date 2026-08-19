@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS army_list_selections (
     id INTEGER PRIMARY KEY,
     army_list_id VARCHAR NOT NULL,
     position INTEGER NOT NULL,
+    unit_id VARCHAR,
     unit_name VARCHAR NOT NULL,
     model_count INTEGER NOT NULL,
     toughness INTEGER NOT NULL,
@@ -99,6 +100,28 @@ CREATE TABLE IF NOT EXISTS simulation_runs (
 );
 """
 
+SIMULATION_SUMMARIES_DDL = """
+CREATE TABLE IF NOT EXISTS simulation_summaries (
+    id VARCHAR PRIMARY KEY,
+    ruleset_id VARCHAR,
+    simulation_type VARCHAR NOT NULL,
+    attacker_name VARCHAR NOT NULL,
+    target_name VARCHAR NOT NULL,
+    attack_plan VARCHAR,
+    iterations INTEGER NOT NULL,
+    seed BIGINT,
+    created_at TIMESTAMP DEFAULT current_timestamp,
+    mean_damage DOUBLE,
+    median_damage DOUBLE,
+    std_damage DOUBLE,
+    mean_models_killed DOUBLE,
+    median_models_killed DOUBLE,
+    min_models_killed INTEGER,
+    max_models_killed INTEGER,
+    probability_target_destroyed DOUBLE
+);
+"""
+
 
 def connect(path: str | Path | None = None) -> duckdb.DuckDBPyConnection:
     """Open a DuckDB connection.
@@ -120,6 +143,7 @@ def initialize_schema(conn: duckdb.DuckDBPyConnection) -> None:
     conn.execute(ARMY_LISTS_DDL)
     conn.execute(ARMY_LIST_SELECTIONS_DDL)
     conn.execute(SIMULATION_RUNS_DDL)
+    conn.execute(SIMULATION_SUMMARIES_DDL)
 
 
 def insert_rules_version(

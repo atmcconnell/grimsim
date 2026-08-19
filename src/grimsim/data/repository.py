@@ -5,6 +5,7 @@ Domain models have no ``.save()`` methods — call these helpers instead.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import date
 
@@ -77,17 +78,18 @@ def save_army_list(
         conn.execute(
             """
             INSERT INTO army_list_selections (
-                id, army_list_id, position, unit_name, model_count, toughness,
+                id, army_list_id, position, unit_id, unit_name, model_count, toughness,
                 wounds_per_model, save, invulnerable_save, quantity, points,
                 enhancement_ids, enhancement_names, enhancement_points
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 _selection_row_id(list_id, position),
                 list_id,
                 position,
+                selection.unit.id,
                 profile.name,
-                profile.model_count,
+                selection.size,
                 profile.toughness,
                 profile.wounds_per_model,
                 profile.save,
@@ -161,7 +163,7 @@ def load_army_list(conn: duckdb.DuckDBPyConnection, list_id: str) -> ArmyList:
 
     selection_rows = conn.execute(
         """
-        SELECT unit_name, model_count, toughness, wounds_per_model, save,
+        SELECT unit_id, unit_name, model_count, toughness, wounds_per_model, save,
                invulnerable_save, quantity, points,
                enhancement_ids, enhancement_names, enhancement_points
         FROM army_list_selections
@@ -174,6 +176,7 @@ def load_army_list(conn: duckdb.DuckDBPyConnection, list_id: str) -> ArmyList:
     selections: list[UnitSelection] = []
     for sel in selection_rows:
         (
+            unit_id,
             unit_name,
             model_count,
             toughness,
@@ -205,6 +208,7 @@ def load_army_list(conn: duckdb.DuckDBPyConnection, list_id: str) -> ArmyList:
                 invulnerable_save=invulnerable_save,
             ),
             weapons=(),
+            id=unit_id or None,
         )
         selections.append(
             UnitSelection(
@@ -212,6 +216,7 @@ def load_army_list(conn: duckdb.DuckDBPyConnection, list_id: str) -> ArmyList:
                 quantity=quantity,
                 points=points,
                 enhancements=enhancements,
+                model_count=model_count,
             )
         )
 
@@ -226,5 +231,93 @@ def load_army_list(conn: duckdb.DuckDBPyConnection, list_id: str) -> ArmyList:
 
 
 def _selection_row_id(list_id: str, position: int) -> int:
-    """Deterministic integer PK for a selection row."""
-    return abs(hash((list_id, position))) % (2**31 - 1)
+    """Deterministic integer PK for a selection row (stable across processes)."""
+    digest = hashlib.sha256(f"{list_id}:{position}".encode()).hexdigest()
+    return int(digest[:8], 16) % (2**31 - 1)
+
+
+def simulation_summary_id(
+    *,
+    simulation_type: str,
+    attacker_name: str,
+    target_name: str,
+    attack_plan: str,
+    iterations: int,
+    seed: int | None,
+    ruleset_id: str | None,
+) -> str:
+    """Stable SHA-256 id from serialized simulation inputs (not ``hash()``)."""
+    payload = json.dumps(
+        {
+            "simulation_type": simulation_type,
+            "attacker_name": attacker_name,
+            "target_name": target_name,
+            "attack_plan": attack_plan,
+            "iterations": iterations,
+            "seed": seed,
+            "ruleset_id": ruleset_id,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def save_simulation_summary(
+    conn: duckdb.DuckDBPyConnection,
+    *,
+    simulation_type: str,
+    attacker_name: str,
+    target_name: str,
+    attack_plan: str,
+    iterations: int,
+    seed: int | None,
+    mean_damage: float,
+    median_damage: float,
+    std_damage: float,
+    mean_models_killed: float,
+    median_models_killed: float,
+    min_models_killed: int,
+    max_models_killed: int,
+    probability_target_destroyed: float,
+    ruleset_id: str | None = None,
+) -> str:
+    """Persist a Monte Carlo summary row. Returns the stable summary id."""
+    summary_id = simulation_summary_id(
+        simulation_type=simulation_type,
+        attacker_name=attacker_name,
+        target_name=target_name,
+        attack_plan=attack_plan,
+        iterations=iterations,
+        seed=seed,
+        ruleset_id=ruleset_id,
+    )
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO simulation_summaries (
+            id, ruleset_id, simulation_type, attacker_name, target_name,
+            attack_plan, iterations, seed, mean_damage, median_damage, std_damage,
+            mean_models_killed, median_models_killed, min_models_killed,
+            max_models_killed, probability_target_destroyed
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            summary_id,
+            ruleset_id,
+            simulation_type,
+            attacker_name,
+            target_name,
+            attack_plan,
+            iterations,
+            seed,
+            mean_damage,
+            median_damage,
+            std_damage,
+            mean_models_killed,
+            median_models_killed,
+            min_models_killed,
+            max_models_killed,
+            probability_target_destroyed,
+        ],
+    )
+    return summary_id

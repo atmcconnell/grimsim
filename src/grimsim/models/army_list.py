@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from grimsim.models.detachment import Detachment
 from grimsim.models.faction import Faction
 from grimsim.models.ruleset import Ruleset
 from grimsim.models.selection import UnitSelection
+
+if TYPE_CHECKING:
+    from grimsim.data.points import PointsCatalog
 
 
 @dataclass(frozen=True)
@@ -33,13 +37,23 @@ class ArmyList:
 
     @property
     def total_points(self) -> int:
-        """Sum of all selection point costs."""
+        """Sum of explicit selection point costs (v0.2 compatibility)."""
         return sum(selection.total_points for selection in self.selections)
+
+    def points_cost(self, catalog: PointsCatalog) -> int:
+        """Sum of catalog costs for this list's ruleset, plus enhancements."""
+        return sum(
+            selection.catalog_points(catalog, self.ruleset) for selection in self.selections
+        )
 
     @property
     def remaining_points(self) -> int:
-        """Points left under the configured limit (may be negative if over)."""
+        """Points left under the configured limit using explicit selection points."""
         return self.points_limit - self.total_points
+
+    def remaining_catalog_points(self, catalog: PointsCatalog) -> int:
+        """Points remaining under the limit using catalog costs."""
+        return self.points_limit - self.points_cost(catalog)
 
     @property
     def selection_count(self) -> int:

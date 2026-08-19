@@ -28,8 +28,38 @@ class RuleEngine:
         target: Unit,
         context: CombatContext,
         rng: np.random.Generator,
+        *,
+        target_remaining_models: int | None = None,
+        target_wounds_on_current: int | None = None,
     ) -> CombatResult:
-        """Resolve attacks → hits → wounds → saves → damage → allocation."""
+        """Resolve attacks → hits → wounds → saves → damage → allocation.
+
+        Optional target remaining/wounds let a unit activation share one
+        evolving target without mutating immutable profiles.
+        """
+        remaining = (
+            target.profile.model_count
+            if target_remaining_models is None
+            else target_remaining_models
+        )
+        if remaining < 0:
+            raise ValueError(f"target_remaining_models must be >= 0, got {remaining}")
+        if remaining == 0:
+            return CombatResult(
+                attacks=0,
+                hits=0,
+                critical_hits=0,
+                wounds=0,
+                critical_wounds=0,
+                failed_saves=0,
+                total_damage=0,
+                models_killed=0,
+                remaining_models=0,
+                remaining_wounds_on_damaged_model=None,
+                damage_mitigated=0,
+                auto_wounds=0,
+            )
+
         profile = weapon.profile
 
         # Combine weapon and attacker abilities for offensive stages.
@@ -74,10 +104,11 @@ class RuleEngine:
         allocation = resolve_damage(
             failed_saves=save_result.failed_saves,
             damage=profile.damage,
-            model_count=target.profile.model_count,
+            model_count=remaining,
             wounds_per_model=target.profile.wounds_per_model,
             target_abilities=defensive_abilities,
             rng=rng,
+            starting_wounds_on_current=target_wounds_on_current,
         )
 
         return CombatResult(

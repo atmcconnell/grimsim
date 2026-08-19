@@ -100,6 +100,19 @@ class DiceExpression:
         rolls = rng.integers(1, self.sides + 1, size=(n, self.count), dtype=np.int64)
         return rolls.sum(axis=1) + self.modifier
 
+    def scaled(self, multiplier: int) -> DiceExpression:
+        """Return this expression multiplied by ``multiplier`` models.
+
+        ``D6+2`` with 3 models becomes ``3D6+6``. A flat value is multiplied.
+        """
+        if multiplier < 1:
+            raise ValueError(f"multiplier must be >= 1, got {multiplier}")
+        return DiceExpression(
+            count=self.count * multiplier,
+            sides=self.sides,
+            modifier=self.modifier * multiplier,
+        )
+
     def __str__(self) -> str:
         if self.count == 0:
             return str(self.modifier)

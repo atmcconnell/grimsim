@@ -83,6 +83,12 @@ class TestDiceExpression:
         for _ in range(50):
             assert 3 <= expr.roll(rng) <= 8
 
+    def test_scaled(self) -> None:
+        expr = DiceExpression(count=1, sides=6, modifier=2)
+        scaled = expr.scaled(3)
+        assert scaled.count == 3
+        assert scaled.modifier == 6
+
     def test_deterministic(self) -> None:
         expr = DiceExpression(count=2, sides=6, modifier=1)
         a = expr.roll(np.random.default_rng(99))

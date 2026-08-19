@@ -7,6 +7,12 @@ from grimsim.models.ability import (
     RerollWoundOnes,
     SustainedHits,
 )
+from grimsim.models.activation import (
+    ActivationResult,
+    AttackPlan,
+    WeaponActivationResult,
+    WeaponAssignment,
+)
 from grimsim.models.army import Army, UnitState
 from grimsim.models.army_list import ArmyList
 from grimsim.models.combat import CombatContext, CombatResult
@@ -20,8 +26,10 @@ from grimsim.models.unit import Unit, UnitProfile
 from grimsim.models.weapon import Weapon, WeaponProfile
 
 __all__ = [
+    "ActivationResult",
     "Army",
     "ArmyList",
+    "AttackPlan",
     "CombatContext",
     "CombatResult",
     "Detachment",
@@ -40,6 +48,8 @@ __all__ = [
     "UnitSelection",
     "UnitState",
     "Weapon",
+    "WeaponAssignment",
+    "WeaponActivationResult",
     "WeaponProfile",
     "roll_dice",
     "roll_die",
